@@ -39,6 +39,8 @@ type Screen struct {
 	CurrentStyle CellStyle
 	Cursor       CursorState
 	SavedCursor  CursorState
+	wrapPending  bool
+	savedWrap    bool
 	cells        []Cell
 }
 
@@ -72,6 +74,8 @@ func (s *Screen) Reset() {
 	s.CurrentStyle = s.DefaultStyle
 	s.Cursor = CursorState{Visible: true}
 	s.SavedCursor = CursorState{Visible: true}
+	s.wrapPending = false
+	s.savedWrap = false
 	for i := range s.cells {
 		s.cells[i] = s.blankCell(s.DefaultStyle)
 	}
@@ -138,11 +142,14 @@ func (s *Screen) WriteRune(r rune) {
 	if width > 2 {
 		width = 1
 	}
-	if s.Cursor.X >= s.Width {
-		s.NewLine()
+	if s.wrapPending {
+		s.lineFeed()
+		s.Cursor.X = 0
+		s.wrapPending = false
 	}
 	if width == 2 && s.Cursor.X == s.Width-1 {
-		s.NewLine()
+		s.lineFeed()
+		s.Cursor.X = 0
 	}
 	if s.Cursor.Y >= s.Height {
 		s.scrollUp(1)
@@ -161,17 +168,18 @@ func (s *Screen) WriteRune(r rune) {
 
 	s.Cursor.X += width
 	if s.Cursor.X >= s.Width {
-		s.Cursor.X = 0
-		s.Cursor.Y++
-		if s.Cursor.Y >= s.Height {
-			s.scrollUp(1)
-			s.Cursor.Y = s.Height - 1
-		}
+		s.Cursor.X = s.Width - 1
+		s.wrapPending = true
+		return
 	}
+	s.wrapPending = false
 }
 
 func (s *Screen) appendToPrevious(text string) {
 	x, y := s.Cursor.X-1, s.Cursor.Y
+	if s.wrapPending {
+		x = s.Width - 1
+	}
 	if x < 0 {
 		x = s.Width - 1
 		y--
@@ -190,10 +198,16 @@ func (s *Screen) appendToPrevious(text string) {
 
 func (s *Screen) CarriageReturn() {
 	s.Cursor.X = 0
+	s.wrapPending = false
 }
 
 func (s *Screen) NewLine() {
+	s.wrapPending = false
 	s.Cursor.X = 0
+	s.lineFeed()
+}
+
+func (s *Screen) lineFeed() {
 	s.Cursor.Y++
 	if s.Cursor.Y >= s.Height {
 		s.scrollUp(1)
@@ -202,6 +216,10 @@ func (s *Screen) NewLine() {
 }
 
 func (s *Screen) Backspace() {
+	if s.wrapPending {
+		s.wrapPending = false
+		return
+	}
 	if s.Cursor.X > 0 {
 		s.Cursor.X--
 	}
@@ -220,19 +238,23 @@ func (s *Screen) Tab(width int) {
 func (s *Screen) MoveCursor(dx, dy int) {
 	s.Cursor.X = clamp(s.Cursor.X+dx, 0, s.Width-1)
 	s.Cursor.Y = clamp(s.Cursor.Y+dy, 0, s.Height-1)
+	s.wrapPending = false
 }
 
 func (s *Screen) MoveCursorTo(row, col int) {
 	s.Cursor.Y = clamp(row, 0, s.Height-1)
 	s.Cursor.X = clamp(col, 0, s.Width-1)
+	s.wrapPending = false
 }
 
 func (s *Screen) SaveCursor() {
 	s.SavedCursor = s.Cursor
+	s.savedWrap = s.wrapPending
 }
 
 func (s *Screen) RestoreCursor() {
 	s.Cursor = s.SavedCursor
+	s.wrapPending = s.savedWrap
 }
 
 func (s *Screen) EraseInDisplay(mode int) {
