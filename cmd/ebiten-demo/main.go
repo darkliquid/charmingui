@@ -187,7 +187,9 @@ func (g *game) updateModel(msg tea.Msg) error {
 	if err := g.uploadFrame(result.Image); err != nil {
 		return err
 	}
-	g.enqueueCmd(result.Cmd)
+	result.Dispatch(g.enqueueCmd, func(msg tea.Msg) {
+		g.msgs <- msg
+	})
 	return nil
 }
 
@@ -214,11 +216,9 @@ func (g *game) enqueueCmd(cmd tea.Cmd) {
 		return
 	}
 	go func() {
-		msg := cmd()
-		if msg == nil {
-			return
-		}
-		g.msgs <- msg
+		charmingui.DispatchCmd(cmd, g.enqueueCmd, func(msg tea.Msg) {
+			g.msgs <- msg
+		})
 	}()
 }
 

@@ -115,6 +115,47 @@ func TestRenderModelAndAdapterUpdate(t *testing.T) {
 	}
 }
 
+type batchResultMsg string
+
+func TestUpdateResultDispatchExpandsBatchCmds(t *testing.T) {
+	result := UpdateResult{
+		Cmd: tea.Batch(
+			func() tea.Msg { return batchResultMsg("tick") },
+			nil,
+			func() tea.Msg { return batchResultMsg("persist") },
+		),
+	}
+
+	var queue []tea.Cmd
+	var delivered []tea.Msg
+
+	enqueue := func(cmd tea.Cmd) {
+		if cmd != nil {
+			queue = append(queue, cmd)
+		}
+	}
+	deliver := func(msg tea.Msg) {
+		delivered = append(delivered, msg)
+	}
+
+	queue = append(queue, result.Cmd)
+	for len(queue) > 0 {
+		cmd := queue[0]
+		queue = queue[1:]
+		UpdateResult{Cmd: cmd}.Dispatch(enqueue, deliver)
+	}
+
+	if len(delivered) != 2 {
+		t.Fatalf("expected 2 delivered messages, got %d", len(delivered))
+	}
+	if got := delivered[0]; got != batchResultMsg("tick") {
+		t.Fatalf("expected first delivered message to be tick, got %#v", got)
+	}
+	if got := delivered[1]; got != batchResultMsg("persist") {
+		t.Fatalf("expected second delivered message to be persist, got %#v", got)
+	}
+}
+
 func TestRenderedImageContainsGlyphPixels(t *testing.T) {
 	r, err := New(Config{Columns: 2, Rows: 1, DefaultBG: color.Black, DefaultFG: color.White})
 	if err != nil {
