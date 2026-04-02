@@ -60,6 +60,12 @@ func DispatchCmd(cmd tea.Cmd, enqueue func(tea.Cmd), deliver func(tea.Msg)) {
 	if cmd == nil {
 		return
 	}
+	if enqueue == nil {
+		enqueue = func(tea.Cmd) {}
+	}
+	if deliver == nil {
+		deliver = func(tea.Msg) {}
+	}
 
 	msg := cmd()
 	switch msg := msg.(type) {
@@ -67,7 +73,9 @@ func DispatchCmd(cmd tea.Cmd, enqueue func(tea.Cmd), deliver func(tea.Msg)) {
 		return
 	case tea.BatchMsg:
 		for _, next := range msg {
-			enqueue(next)
+			if next != nil {
+				enqueue(next)
+			}
 		}
 	default:
 		deliver(msg)

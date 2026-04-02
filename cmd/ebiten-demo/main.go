@@ -187,9 +187,11 @@ func (g *game) updateModel(msg tea.Msg) error {
 	if err := g.uploadFrame(result.Image); err != nil {
 		return err
 	}
-	result.Dispatch(g.enqueueCmd, func(msg tea.Msg) {
-		g.msgs <- msg
-	})
+	go func() {
+		result.Dispatch(g.enqueueCmd, func(msg tea.Msg) {
+			g.msgs <- msg
+		})
+	}()
 	return nil
 }
 
