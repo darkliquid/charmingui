@@ -68,5 +68,6 @@ That creates a renderer, renders a Bubble Tea model, and writes the resulting fr
 - `(*Renderer).RenderFrame` renders a full ANSI frame.
 - `(*Renderer).RenderStream` applies ANSI output incrementally to the current virtual screen.
 - `NewModelAdapter` helps keep a Bubble Tea model updated and rendered in apps with their own event loop.
+- `UpdateResult.Dispatch` and `DispatchCmd` run commands and expand `tea.Batch(...)` results into individual child commands for custom runtimes.
 
 See `cmd/ebiten-demo` for a full example that embeds Bubble Tea inside an Ebiten application.
