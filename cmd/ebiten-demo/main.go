@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/darkliquid/charmingui"
+	"github.com/darkliquid/charmingui/mouseadaptor"
 	"github.com/hajimehoshi/ebiten/v2"
 	"github.com/hajimehoshi/ebiten/v2/inpututil"
 
@@ -22,8 +23,9 @@ const (
 )
 
 type demoModel struct {
-	input   textinput.Model
-	initCmd tea.Cmd
+	input        textinput.Model
+	initCmd      tea.Cmd
+	lastMouseMsg string
 }
 
 func newDemoModel(cols int) demoModel {
@@ -52,6 +54,9 @@ func (m demoModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c", "esc":
 			return m, tea.Quit
 		}
+	case tea.MouseMsg:
+		mouse := msg.Mouse()
+		m.lastMouseMsg = fmt.Sprintf("%T col=%d row=%d", msg, mouse.X, mouse.Y)
 	}
 
 	var cmd tea.Cmd
@@ -60,6 +65,10 @@ func (m demoModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m demoModel) View() tea.View {
+	mouseInfo := m.lastMouseMsg
+	if mouseInfo == "" {
+		mouseInfo = "<none yet>"
+	}
 	content := strings.Join([]string{
 		"\x1b[1;36mCharmingUI + Ebiten demo\x1b[0m",
 		"",
@@ -70,6 +79,8 @@ func (m demoModel) View() tea.View {
 		"",
 		fmt.Sprintf("\x1b[2mCurrent value:\x1b[0m %s", displayValue(m.input.Value())),
 		"",
+		fmt.Sprintf("\x1b[2mLast mouse event:\x1b[0m %s", mouseInfo),
+		"",
 		"\x1b[2mControls: type text, use arrows/home/end, Tab for suggestions, Backspace/Delete, Esc or Ctrl+C to quit.\x1b[0m",
 	}, "\n")
 
@@ -79,13 +90,14 @@ func (m demoModel) View() tea.View {
 }
 
 type game struct {
-	renderer *charmingui.Renderer
-	adapter  *charmingui.ModelAdapter
-	frame    *image.RGBA
-	surface  *ebiten.Image
-	msgs     chan tea.Msg
-	runes    []rune
-	keys     []ebiten.Key
+	renderer     *charmingui.Renderer
+	adapter      *charmingui.ModelAdapter
+	mouse        *mouseadaptor.Adaptor
+	frame        *image.RGBA
+	surface      *ebiten.Image
+	msgs         chan tea.Msg
+	runes        []rune
+	keys         []ebiten.Key
 }
 
 func newGame() (*game, error) {
@@ -105,9 +117,15 @@ func newGame() (*game, error) {
 		return nil, err
 	}
 
+	mouse, err := mouseadaptor.NewFromRenderer(renderer)
+	if err != nil {
+		return nil, err
+	}
+
 	g := &game{
 		renderer: renderer,
 		adapter:  adapter,
+		mouse:    mouse,
 		surface:  ebiten.NewImage(renderer.SurfaceBounds().Dx(), renderer.SurfaceBounds().Dy()),
 		msgs:     make(chan tea.Msg, 32),
 	}
@@ -144,6 +162,28 @@ func (g *game) Update() error {
 			continue
 		}
 		if err := g.updateModel(msg); err != nil {
+			return err
+		}
+	}
+
+	// Collect mouse state. Ebiten reports cursor in logical window coordinates
+	// (already scaled by demoScale), so we divide back to surface pixel space.
+	cx, cy := ebiten.CursorPosition()
+	_, wheelY := ebiten.Wheel()
+	state := mouseadaptor.MouseState{
+		X:          cx / demoScale,
+		Y:          cy / demoScale,
+		Left:       ebiten.IsMouseButtonPressed(ebiten.MouseButtonLeft),
+		Middle:     ebiten.IsMouseButtonPressed(ebiten.MouseButtonMiddle),
+		Right:      ebiten.IsMouseButtonPressed(ebiten.MouseButtonRight),
+		WheelUp:    wheelY > 0,
+		WheelDown:  wheelY < 0,
+		Shift:      ebiten.IsKeyPressed(ebiten.KeyShift) || ebiten.IsKeyPressed(ebiten.KeyShiftLeft) || ebiten.IsKeyPressed(ebiten.KeyShiftRight),
+		Alt:        ebiten.IsKeyPressed(ebiten.KeyAlt) || ebiten.IsKeyPressed(ebiten.KeyAltLeft) || ebiten.IsKeyPressed(ebiten.KeyAltRight),
+		Ctrl:       controlPressed(),
+	}
+	for _, mouseMsg := range g.mouse.Convert(state) {
+		if err := g.updateModel(mouseMsg); err != nil {
 			return err
 		}
 	}
